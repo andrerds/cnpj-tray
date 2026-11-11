@@ -1,0 +1,14 @@
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# Node
+node_modules/
+package-lock.json
+
+# macOS
+.DS_Store
+
+# artefatos de ferramentas locais
+.claude-flow/
+.swarm/

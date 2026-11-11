@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="color-scheme" content="light dark" />
+  <title>Consulta CNPJ</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header data-tauri-drag-region>
+    <h1 data-tauri-drag-region>Consulta CNPJ</h1>
+    <button class="fechar" id="fechar" type="button" title="Fechar painel (Esc)" aria-label="Fechar painel">✕</button>
+  </header>
+
+  <form id="form" autocomplete="off" novalidate>
+    <label for="cnpj" class="oculto">CNPJ</label>
+    <input
+      id="cnpj"
+      type="text"
+      inputmode="numeric"
+      placeholder="00.000.000/0000-00"
+      aria-describedby="msg"
+      spellcheck="false"
+    />
+    <button class="primario" id="buscar" type="submit">Buscar</button>
+  </form>
+
+  <p id="msg" role="status" aria-live="polite"></p>
+
+  <ul id="historico" aria-label="Consultas recentes"></ul>
+
+  <div id="barra">
+    <div class="formatos" role="group" aria-label="Formato de saída">
+      <button type="button" data-formato="md" aria-pressed="true">Markdown</button>
+      <button type="button" data-formato="txt" aria-pressed="false">TXT</button>
+    </div>
+    <span class="espaco"></span>
+    <button type="button" id="copiar" disabled>Copiar</button>
+  </div>
+
+  <main id="saida" tabindex="0" aria-live="polite">
+    <p class="vazio">Digite um CNPJ e pressione Enter.</p>
+  </main>
+
+  <script src="main.js"></script>
+</body>
+</html>
