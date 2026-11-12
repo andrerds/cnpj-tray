@@ -218,8 +218,13 @@ function atualizarSaida() {
   if (!estado.dados) return;
   estado.texto = estado.formato === "md" ? renderMarkdown(estado.dados) : renderTexto(estado.dados);
   const pre = document.createElement("pre");
-  pre.textContent = estado.texto;
+  // Markdown é o formato copiado; no painel, remove a sintaxe para não exibir asteriscos crus.
+  pre.textContent = estado.formato === "md"
+    ? estado.texto.replace(/^# /, "").replace(/\*\*/g, "").replace(/^ {0,3}- /gm, "• ")
+    : estado.texto;
   elSaida.replaceChildren(pre);
+  elCopiar.classList.remove("copiado");
+  elCopiar.textContent = "Copiar";
   elCopiar.disabled = false;
 }
 
@@ -287,10 +292,21 @@ async function carregarHistorico() {
   }
 }
 
+function marcarCopiado() {
+  elCopiar.textContent = "Copiado";
+  elCopiar.classList.add("copiado");
+  clearTimeout(marcarCopiado.t);
+  marcarCopiado.t = setTimeout(() => {
+    elCopiar.textContent = "Copiar";
+    elCopiar.classList.remove("copiado");
+  }, 1600);
+}
+
 async function copiar() {
   if (!estado.texto) return;
   try {
     await navigator.clipboard.writeText(estado.texto);
+    marcarCopiado();
     aviso("Copiado para a área de transferência.", "ok");
   } catch {
     // fallback para WebViews sem permissão de clipboard
@@ -302,6 +318,7 @@ async function copiar() {
     ta.select();
     const ok = document.execCommand("copy");
     ta.remove();
+    if (ok) marcarCopiado();
     aviso(ok ? "Copiado para a área de transferência." : "Não foi possível copiar.", ok ? "ok" : "erro");
   }
 }

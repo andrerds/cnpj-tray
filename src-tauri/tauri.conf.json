@@ -17,10 +17,16 @@
         "resizable": false,
         "visible": false,
         "decorations": false,
+        "transparent": true,
         "skipTaskbar": true,
         "alwaysOnTop": true,
         "minWidth": 430,
-        "minHeight": 400
+        "minHeight": 400,
+        "windowEffects": {
+          "effects": ["windowBackground"],
+          "state": "followsWindowActiveState",
+          "radius": 12
+        }
       }
     ],
     "security": {
