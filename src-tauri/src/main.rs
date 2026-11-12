@@ -9,35 +9,45 @@ use tauri::{
     AppHandle, LogicalPosition, Manager, Rect, WebviewWindow,
 };
 
-const API: &str = "https://api.opencnpj.org/";
+const API_CNPJ: &str = "https://api.opencnpj.org/";
+const API_UTIL: &str = "https://public-utilities.rmscorretora.com.br/api/";
 const MAX_HISTORICO: usize = 5;
-const PREFIXO: &str = "CNPJ";
 
 #[derive(Serialize, Deserialize, Clone)]
 struct Consulta {
-    cnpj: String,
+    /// "cnpj" ou "cep"
+    #[serde(default = "tipo_cnpj")]
+    tipo: String,
+    /// CNPJ (14 dígitos) ou CEP (8 dígitos), sem máscara
+    #[serde(alias = "cnpj")]
+    chave: String,
     /// epoch em milissegundos; formatado no painel conforme o locale do sistema
     ts: u64,
     dados: serde_json::Value,
 }
 
-/// Aceita CNPJ com ou sem máscara. Devolve os 14 dígitos, preservando zeros à esquerda.
-fn normalizar(entrada: &str) -> Result<String, String> {
+fn tipo_cnpj() -> String {
+    "cnpj".to_string()
+}
+
+/// Aceita CNPJ ou CEP com ou sem máscara e devolve apenas os dígitos.
+fn so_digitos(entrada: &str) -> Result<String, String> {
     let invalido = entrada.chars().find(|c| !c.is_ascii_digit() && !matches!(c, '.' | '/' | '-' | ' ' | '\t'));
     if let Some(c) = invalido {
         return Err(format!("Caractere inválido: '{c}'. Use apenas números, ponto, barra, hífen ou espaço."));
     }
     let digitos: String = entrada.chars().filter(char::is_ascii_digit).collect();
     if digitos.is_empty() {
-        return Err("Digite um CNPJ para consultar.".to_string());
+        return Err("Digite um CNPJ (14 dígitos) ou um CEP (8 dígitos).".to_string());
     }
-    if digitos.len() != 14 {
-        return Err(format!("CNPJ deve ter 14 dígitos — recebi {}.", digitos.len()));
-    }
+    Ok(digitos)
+}
+
+fn validar_cnpj(digitos: &str) -> Result<(), String> {
     if digitos.bytes().all(|b| b == digitos.as_bytes()[0]) {
         return Err("CNPJ inválido: todos os dígitos são iguais.".to_string());
     }
-    Ok(digitos)
+    Ok(())
 }
 
 fn caminho_historico(app: &AppHandle) -> Result<std::path::PathBuf, String> {
@@ -65,20 +75,20 @@ fn gravar_historico(app: &AppHandle, hist: &[Consulta]) -> Result<(), String> {
     std::fs::write(&p, txt).map_err(|e| format!("Não consegui gravar o histórico em {p:?}: {e}"))
 }
 
-#[tauri::command]
-async fn consultar(app: AppHandle, cnpj: String) -> Result<serde_json::Value, String> {
-    let norm = normalizar(&cnpj)?;
-    let cliente = reqwest::Client::builder()
+fn cliente() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
         .timeout(Duration::from_secs(20))
         .user_agent(concat!("cnpj-tray/", env!("CARGO_PKG_VERSION")))
         .build()
-        .map_err(|e| format!("Falha ao iniciar o cliente HTTP: {e}"))?;
+        .map_err(|e| format!("Falha ao iniciar o cliente HTTP: {e}"))
+}
 
-    let resp = cliente.get(format!("{API}{norm}")).send().await.map_err(|e| {
+async fn buscar_json(url: &str, host: &str) -> Result<serde_json::Value, String> {
+    let resp = cliente()?.get(url).send().await.map_err(|e| {
         if e.is_timeout() {
             "A consulta passou de 20 segundos e foi cancelada.".to_string()
         } else if e.is_connect() {
-            "Não foi possível conectar a api.opencnpj.org. Verifique a conexão.".to_string()
+            format!("Não foi possível conectar a {host}. Verifique a conexão.")
         } else {
             format!("Falha de rede: {e}")
         }
@@ -88,28 +98,61 @@ async fn consultar(app: AppHandle, cnpj: String) -> Result<serde_json::Value, St
     let corpo = resp.text().await.map_err(|e| format!("Falha ao ler a resposta: {e}"))?;
 
     if status != 200 {
+        // o serviço de utilidades devolve { error: { message } }; uso a mensagem quando existir
+        let detalhe = serde_json::from_str::<serde_json::Value>(&corpo)
+            .ok()
+            .and_then(|v| v["error"]["message"].as_str().map(str::to_string));
         return Err(match status {
-            400 => format!("A API rejeitou o CNPJ {norm} (HTTP 400)."),
-            404 => format!("CNPJ {norm} não encontrado na base."),
+            400 => detalhe.unwrap_or_else(|| "A API rejeitou o valor enviado (HTTP 400).".to_string()),
+            404 => "Não encontrado na base.".to_string(),
             429 => "Muitas consultas em pouco tempo (HTTP 429). Aguarde e tente de novo.".to_string(),
             s if s >= 500 => format!("A API está instável (HTTP {s}). Tente novamente em instantes."),
             s => format!("A API respondeu HTTP {s}."),
         });
     }
 
-    let dados: serde_json::Value = serde_json::from_str(&corpo)
-        .map_err(|_| "A resposta da API não é um JSON válido.".to_string())?;
+    serde_json::from_str(&corpo).map_err(|_| "A resposta da API não é um JSON válido.".to_string())
+}
 
+fn guardar(app: &AppHandle, tipo: &str, chave: &str, dados: &serde_json::Value) {
     let ts = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0);
-    let mut hist = ler_historico(&app);
-    hist.retain(|c| c.cnpj != norm);
-    hist.insert(0, Consulta { cnpj: norm, ts, dados: dados.clone() });
+    let mut hist = ler_historico(app);
+    hist.retain(|c| !(c.tipo == tipo && c.chave == chave));
+    hist.insert(0, Consulta { tipo: tipo.to_string(), chave: chave.to_string(), ts, dados: dados.clone() });
     hist.truncate(MAX_HISTORICO);
-    if let Err(e) = gravar_historico(&app, &hist) {
+    if let Err(e) = gravar_historico(app, &hist) {
         // a consulta em si deu certo; falha de disco não deve esconder o resultado
         eprintln!("aviso: {e}");
     }
+}
 
+/// Consulta CNPJ (14 dígitos) ou CEP (8 dígitos), escolhendo o endpoint pela contagem.
+#[tauri::command]
+async fn consultar(app: AppHandle, entrada: String) -> Result<serde_json::Value, String> {
+    let digitos = so_digitos(&entrada)?;
+
+    let (tipo, url) = match digitos.len() {
+        14 => {
+            validar_cnpj(&digitos)?;
+            ("cnpj", format!("{API_CNPJ}{digitos}"))
+        }
+        8 => ("cep", format!("{API_UTIL}cep/{digitos}")),
+        n => {
+            return Err(format!(
+                "Informe 14 dígitos para CNPJ ou 8 para CEP — recebi {n}."
+            ))
+        }
+    };
+
+    let host = if tipo == "cnpj" { "api.opencnpj.org" } else { "public-utilities.rmscorretora.com.br" };
+    let mut dados = buscar_json(&url, host).await?;
+
+    // o serviço de utilidades embrulha o resultado em { data, cached }
+    if tipo == "cep" {
+        dados = dados.get("data").cloned().unwrap_or(dados);
+    }
+
+    guardar(&app, tipo, &digitos, &dados);
     Ok(dados)
 }
 
@@ -180,6 +223,10 @@ fn main() {
             let win = app
                 .get_webview_window("main")
                 .ok_or("janela principal não encontrada")?;
+
+            // o painel precisa aparecer também sobre apps em tela cheia, como um item de barra de menus
+            #[cfg(target_os = "macos")]
+            let _ = win.set_visible_on_all_workspaces(true);
             let win_clone = win.clone();
             win.on_window_event(move |event| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -194,7 +241,7 @@ fn main() {
 
             let tray = TrayIconBuilder::with_id("bandeja")
                 .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?)
-                .tooltip(format!("{PREFIXO} · consulta rápida"))
+                .tooltip("CNPJ / CEP · consulta rápida")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, evento| match evento.id().as_ref() {
@@ -225,6 +272,14 @@ fn main() {
             // no macOS o ícone da bandeja deve ser monocromático e seguir o tema do sistema
             #[cfg(target_os = "macos")]
             tray.set_icon_as_template(true)?;
+
+            // Aberto pelo Finder/Launchpad não há evento de clique na bandeja: mostra o painel
+            // já posicionado sob o ícone, para o app nunca parecer que não abriu.
+            if let Ok(Some(rect)) = tray.rect() {
+                posicionar(&win, rect);
+            }
+            let _ = win.show();
+            let _ = win.set_focus();
 
             Ok(())
         })

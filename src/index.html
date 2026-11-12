@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="color-scheme" content="light dark" />
-  <title>Consulta CNPJ</title>
+  <title>Consulta CNPJ / CEP</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header data-tauri-drag-region>
-    <h1 data-tauri-drag-region>Consulta CNPJ</h1>
+    <h1 data-tauri-drag-region>Consulta CNPJ / CEP</h1>
     <button class="fechar" id="fechar" type="button" title="Fechar painel (Esc)" aria-label="Fechar painel">✕</button>
   </header>
 
@@ -18,7 +18,7 @@
       id="cnpj"
       type="text"
       inputmode="numeric"
-      placeholder="00.000.000/0000-00"
+      placeholder="CNPJ 14 dígitos ou CEP 8 dígitos"
       aria-describedby="msg"
       spellcheck="false"
     />
@@ -39,7 +39,7 @@
   </div>
 
   <main id="saida" tabindex="0" aria-live="polite">
-    <p class="vazio">Digite um CNPJ e pressione Enter<br /><span>os dados cadastrais aparecem aqui</span></p>
+    <p class="vazio">Digite um CNPJ ou CEP e pressione Enter<br /><span>os dados cadastrais aparecem aqui</span></p>
   </main>
 
   <script src="main.js"></script>

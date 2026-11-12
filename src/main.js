@@ -15,6 +15,12 @@ const elCopiar = $("copiar");
 /** Rótulos dos campos conhecidos. Chave desconhecida aparece com o nome cru — nada é omitido. */
 const LABELS = {
   cnpj: "CNPJ",
+  cep: "CEP",
+  street: "Logradouro",
+  neighborhood: "Bairro",
+  city: "Cidade",
+  state: "UF",
+  source: "Fonte",
   razao_social: "Razão social",
   nome_fantasia: "Nome fantasia",
   situacao_cadastral: "Situação cadastral",
@@ -85,14 +91,44 @@ const ORDEM = [
   "lgpd_anonimizado", "updated_at",
 ];
 
+const ORDEM_CEP = ["cep", "street", "neighborhood", "city", "state", "complement", "source"];
+
 const LISTAS = { cnaes: "cnaes", telefones: "telefones", QSA: "qsa" };
 
 const estado = { dados: null, formato: "md", texto: "" };
 
-function mascarar(cnpj) {
+/** True quando o resultado é de CEP (tem CEP e não tem razão social). */
+function ehCep(dados) {
+  return Boolean(dados && dados.cep && !dados.razao_social && !dados.companyName);
+}
+
+/** Linha de título do resultado: razão social no CNPJ, endereço no CEP. */
+function titulo(dados) {
+  if (ehCep(dados)) {
+    const rua = [dados.street, dados.neighborhood, dados.city, dados.state].filter(Boolean).join(", ");
+    return rua || `CEP ${mascararCep(dados.cep)}`;
+  }
+  return dados.razao_social ?? mascararCnpj(dados.cnpj);
+}
+
+function mascararCnpj(cnpj) {
   const d = String(cnpj ?? "").replace(/\D/g, "");
   if (d.length !== 14) return String(cnpj ?? "");
   return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
+}
+
+function mascararCep(cep) {
+  const d = String(cep ?? "").replace(/\D/g, "");
+  if (d.length !== 8) return String(cep ?? "");
+  return `${d.slice(0, 5)}-${d.slice(5)}`;
+}
+
+/** Formata pelos dígitos: 8 = CEP, 14 = CNPJ, outro tamanho fica como veio. */
+function mascarar(valor) {
+  const d = String(valor ?? "").replace(/\D/g, "");
+  if (d.length === 8) return mascararCep(d);
+  if (d.length === 14) return mascararCnpj(d);
+  return String(valor ?? "");
 }
 
 function escalar(v) {
@@ -129,7 +165,7 @@ function blocos(dados) {
     out.push({ chave, rotulo: LABELS[chave] ?? chave, ...bloco });
   };
 
-  for (const chave of ORDEM) {
+  for (const chave of ehCep(dados) ? ORDEM_CEP : ORDEM) {
     if (!(chave in dados)) continue;
     const valor = dados[chave];
     if (valor === null || valor === undefined) continue;
@@ -156,9 +192,11 @@ function blocos(dados) {
       }) });
     } else if (Array.isArray(valor)) {
       push(chave, { tipo: "valor", texto: valor.map(escalar).join(", ") });
+    } else if (chave === "cnpj" || chave === "cep") {
+      // identificadores saem sempre mascarados, tanto no CNPJ quanto no endereço
+      push(chave, { tipo: "valor", texto: mascarar(valor) });
     } else {
-      const txt = escalar(valor);
-      push(chave, { tipo: "valor", texto: txt });
+      push(chave, { tipo: "valor", texto: escalar(valor) });
     }
   }
 
@@ -171,9 +209,9 @@ function blocos(dados) {
 }
 
 function renderMarkdown(dados) {
-  const linhas = [`# ${dados.razao_social ?? mascarar(dados.cnpj)}`, ""];
+  const linhas = [`# ${titulo(dados)}`, ""];
   for (const b of blocos(dados)) {
-    const nome = b.chave === "cnpj" ? `${b.rotulo} ${mascarar(dados.cnpj)}` : b.rotulo;
+    const nome = b.rotulo;
     if (b.tipo === "valor") {
       linhas.push(`- **${nome}:** ${b.texto}`);
     } else if (b.tipo === "lista") {
@@ -192,9 +230,9 @@ function renderMarkdown(dados) {
 
 function renderTexto(dados) {
   const sep = "─".repeat(46);
-  const linhas = [String(dados.razao_social ?? "").toUpperCase(), sep];
+  const linhas = [String(titulo(dados)).toUpperCase(), sep];
   for (const b of blocos(dados)) {
-    const nome = b.chave === "cnpj" ? `${b.rotulo} ${mascarar(dados.cnpj)}` : b.rotulo;
+    const nome = b.rotulo;
     if (b.tipo === "valor") {
       linhas.push(`${nome}: ${b.texto}`);
     } else if (b.tipo === "lista") {
@@ -233,13 +271,13 @@ function aviso(texto, tipo) {
   elMsg.className = tipo ?? "";
 }
 
-async function buscar(cnpj) {
+async function buscar(entrada) {
   aviso("Consultando…");
   elBuscar.disabled = true;
   try {
-    const dados = await invoke("consultar", { cnpj });
+    const dados = await invoke("consultar", { entrada });
     estado.dados = dados;
-    elCnpj.value = mascarar(dados.cnpj ?? cnpj);
+    elCnpj.value = mascarar(dados.cnpj ?? dados.cep ?? entrada);
     atualizarSaida();
     aviso("");
     await carregarHistorico();
@@ -272,11 +310,11 @@ async function carregarHistorico() {
     const li = document.createElement("li");
     li.tabIndex = 0;
     li.setAttribute("role", "button");
-    li.title = `Mostrar consulta de ${mascarar(item.cnpj)} (${dataCurta(item.ts)})`;
-    li.textContent = `${mascarar(item.cnpj)} · ${dataCurta(item.ts)}`;
+    li.title = `Mostrar consulta de ${mascarar(item.chave)} (${dataCurta(item.ts)})`;
+    li.textContent = `${mascarar(item.chave)} · ${dataCurta(item.ts)}`;
     const abrir = () => {
       estado.dados = item.dados;
-      elCnpj.value = mascarar(item.cnpj);
+      elCnpj.value = mascarar(item.chave);
       atualizarSaida();
       aviso(`Consulta de ${dataCurta(item.ts)} — dados salvos localmente.`, "ok");
       elSaida.focus();
