@@ -195,39 +195,42 @@ button.primario:disabled { opacity: 0.55; cursor: not-allowed; }
 #msg.erro { color: var(--erro); }
 #msg.ok { color: var(--ok); }
 
-/* ---------- histórico ---------- */
-
 #historico {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  display: none;
+}
+
+.historico-combobox {
   margin: 0;
   padding: 0 12px 10px;
-  list-style: none;
-}
-
-#historico:empty { display: none; }
-
-#historico li {
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: var(--veu-controle);
-  color: var(--muted);
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-  font-size: 11px;
+  width: calc(100% - 24px);
+  max-width: 406px;
+  height: 30px;
+  border: 1px solid var(--borda-campo);
+  border-radius: var(--r-md);
+  background: var(--veu-campo);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
-  white-space: nowrap;
-  transition: background-color 120ms ease, color 120ms ease;
+  transition: background-color 120ms ease, border-color 120ms ease;
 }
 
-#historico li:hover,
-#historico li:focus-visible {
-  background: var(--veu-controle-hover);
-  color: var(--fg);
+.historico-combobox:focus {
+  outline: none;
+  background: var(--veu-campo-foco);
+  border-color: var(--acento);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--acento) 22%, transparent);
 }
 
-/* ---------- barra de ferramentas ---------- */
+.historico-combobox option {
+  padding: 4px 8px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- sugestões de endereço (busca por rua) ---------- */
 
 #barra {
   display: flex;
@@ -318,6 +321,57 @@ pre {
 .vazio span {
   font-size: 11.5px;
   opacity: 0.75;
+}
+
+/* ---------- chip "empresa nova" (<6 meses) ---------- */
+
+.chip-nova {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--acento) 18%, transparent);
+  color: var(--acento);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* ---------- sugestões de endereço (busca por rua) ---------- */
+
+#sugestoes {
+  margin: 0;
+  padding: 0 12px 8px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+#sugestoes:empty { display: none; }
+
+#sugestoes li {
+  padding: 6px 10px;
+  border-radius: var(--r-md);
+  background: var(--veu-controle);
+  color: var(--fg);
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+#sugestoes li:hover,
+#sugestoes li:focus-visible {
+  background: var(--veu-controle-hover);
+}
+
+#sugestoes li small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 2px;
 }
 
 .oculto { display: none !important; }

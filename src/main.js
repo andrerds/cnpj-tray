@@ -9,8 +9,53 @@ const elCnpj = $("cnpj");
 const elBuscar = $("buscar");
 const elMsg = $("msg");
 const elHist = $("historico");
+const elSugestoes = $("sugestoes");
 const elSaida = $("saida");
 const elCopiar = $("copiar");
+
+let debounceTimer = null;
+
+/** Busca sugestões de endereço com debounce de 300ms. */
+function buscarEnderecoDebounce(query) {
+ clearTimeout(debounceTimer);
+ if (query.length < 3) {
+ elSugestoes.replaceChildren();
+ return;
+ }
+ debounceTimer = setTimeout(async () => {
+ try {
+ const sugestoes = await invoke("buscar_endereco", { query });
+ renderizarSugestoes(sugestoes);
+ } catch (e) {
+ console.error(e);
+ elSugestoes.replaceChildren();
+ }
+ }, 300);
+}
+
+function renderizarSugestoes(sugestoes) {
+ elSugestoes.replaceChildren();
+ for (const s of sugestoes.slice(0, 5)) {
+ const li = document.createElement("li");
+ li.tabIndex = 0;
+ li.setAttribute("role", "option");
+ const cep = s.context?.postcode?.name ?? "";
+ li.innerHTML = `<strong>${s.name}</strong><small>${s.place_formatted}${cep ? " · CEP " + cep : ""}</small>`;
+ const selecionar = () => {
+ elCnpj.value = cep || s.name;
+ elSugestoes.replaceChildren();
+ if (cep) buscar(cep);
+ };
+ li.addEventListener("click", selecionar);
+ li.addEventListener("keydown", (ev) => {
+ if (ev.key === "Enter" || ev.key === " ") {
+ ev.preventDefault();
+ selecionar();
+ }
+ });
+ elSugestoes.append(li);
+ }
+}
 
 /** Rótulos dos campos conhecidos. Chave desconhecida aparece com o nome cru — nada é omitido. */
 const LABELS = {
@@ -100,6 +145,17 @@ const estado = { dados: null, formato: "md", texto: "" };
 /** True quando o resultado é de CEP (tem CEP e não tem razão social). */
 function ehCep(dados) {
   return Boolean(dados && dados.cep && !dados.razao_social && !dados.companyName);
+}
+
+/** Chip discreto quando a empresa tem menos de 6 meses desde data_inicio_atividade. */
+function empresaNova(dados) {
+  if (ehCep(dados) || !dados.data_inicio_atividade) return false;
+  const inicio = new Date(`${dados.data_inicio_atividade}T00:00:00`);
+  if (Number.isNaN(inicio.getTime())) return false;
+  const diffMeses =
+    (new Date().getFullYear() - inicio.getFullYear()) * 12 +
+    (new Date().getMonth() - inicio.getMonth());
+  return diffMeses < 6;
 }
 
 /** Linha de título do resultado: razão social no CNPJ, endereço no CEP. */
@@ -261,9 +317,19 @@ function atualizarSaida() {
     ? estado.texto.replace(/^# /, "").replace(/\*\*/g, "").replace(/^ {0,3}- /gm, "• ")
     : estado.texto;
   elSaida.replaceChildren(pre);
+  if (empresaNova(estado.dados)) elSaida.append(chipEmpresaNova());
   elCopiar.classList.remove("copiado");
   elCopiar.textContent = "Copiar";
   elCopiar.disabled = false;
+}
+
+/** Chip "nova": empresa aberta há menos de 6 meses. */
+function chipEmpresaNova() {
+  const chip = document.createElement("span");
+  chip.className = "chip-nova";
+  chip.textContent = "nova";
+  chip.title = `Aberta há menos de 6 meses (início em ${estado.dados.data_inicio_atividade})`;
+  return chip;
 }
 
 function aviso(texto, tipo) {
@@ -367,8 +433,86 @@ function fechar() {
 
 elForm.addEventListener("submit", (ev) => {
   ev.preventDefault();
+  elSugestoes.replaceChildren();
   buscar(elCnpj.value);
 });
+
+// Autocomplete de endereço: dispara após 3+ caracteres com debounce
+elCnpj.addEventListener("input", () => {
+  const valor = elCnpj.value.trim();
+  const soDigitos = valor.replace(/\D/g, "");
+  // Se parece CNPJ/CEP completo ou quase, não busca endereço
+  if (soDigitos.length >= 8 && /^[\d.\-\/\s]+$/.test(valor)) {
+    elSugestoes.replaceChildren();
+    return;
+  }
+  if (valor.length >= 3 && /[a-zA-ZÀ-ÿ]/.test(valor)) {
+    buscarEnderecoDebounce(valor);
+  } else {
+    elSugestoes.replaceChildren();
+  }
+});
+
+// Substitui lista de histórico por combobox compacto
+async function carregarHistoricoCombobox() {
+  let lista = [];
+  try {
+    lista = await invoke("historico");
+  } catch (e) {
+    console.error(e);
+  }
+  // Remove combobox anterior se existir
+  const antigo = document.getElementById("historico-combobox");
+  if (antigo) antigo.remove();
+  elHist.replaceChildren();
+  elHist.style.display = "none";
+
+  if (!lista.length) return;
+
+  const select = document.createElement("select");
+  select.id = "historico-combobox";
+  select.className = "historico-combobox";
+  select.setAttribute("aria-label", "Histórico de consultas");
+
+  const optPadrao = document.createElement("option");
+  optPadrao.value = "";
+  optPadrao.textContent = "Histórico recente...";
+  optPadrao.disabled = true;
+  optPadrao.selected = true;
+  select.appendChild(optPadrao);
+
+  lista.forEach((item, idx) => {
+    const opt = document.createElement("option");
+    opt.value = String(idx);
+    // Compatibilidade: usa 'cnpj' se 'chave' não existir (histórico antigo)
+    const identificador = item.chave || item.cnpj;
+    opt.textContent = `${mascarar(identificador)} · ${dataCurta(item.ts)}`;
+    opt.dataset.item = JSON.stringify(item);
+    select.appendChild(opt);
+  });
+
+  select.addEventListener("change", () => {
+    const opt = select.options[select.selectedIndex];
+    if (!opt || !opt.dataset.item) return;
+    const item = JSON.parse(opt.dataset.item);
+    estado.dados = item.dados;
+    const identificador = item.chave || item.cnpj;
+    elCnpj.value = mascarar(identificador);
+    atualizarSaida();
+    aviso(`Consulta de ${dataCurta(item.ts)} — dados salvos localmente.`, "ok");
+    elSaida.focus();
+    // Reset para permitir reselecionar
+    select.selectedIndex = 0;
+  });
+
+  elHist.parentNode.insertBefore(select, elHist.nextSibling);
+}
+
+// Sobrescreve carregarHistorico para usar combobox
+const _carregarHistoricoOriginal = carregarHistorico;
+carregarHistorico = async function() {
+  await carregarHistoricoCombobox();
+};
 
 for (const btn of document.querySelectorAll("[data-formato]")) {
   btn.addEventListener("click", () => {
@@ -384,7 +528,13 @@ elCopiar.addEventListener("click", copiar);
 $("fechar").addEventListener("click", fechar);
 
 document.addEventListener("keydown", (ev) => {
-  if (ev.key === "Escape") fechar();
+  if (ev.key === "Escape") {
+    if (elSugestoes.children.length > 0) {
+      elSugestoes.replaceChildren();
+    } else {
+      fechar();
+    }
+  }
 });
 
 window.addEventListener("focus", () => {

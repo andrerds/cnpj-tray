@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Protótipos · Consulta CNPJ / CEP</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 28px 20px 96px;
+      background: #101116;
+      color: #f4f4f6;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    #stage { width: min(100%, 520px); min-height: 600px; display: grid; place-items: center; }
+    .demo-frame { width: 430px; height: 600px; max-width: 100%; position: relative; overflow: hidden; }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+    .app-icon { width: 34px; height: 34px; flex: none; }
+    .tray-icon { width: 20px; height: 20px; flex: none; }
+    .icon-preview { display: flex; align-items: center; gap: 6px; }
+    .icon-preview small { color: currentColor; opacity: .55; font-size: 10px; letter-spacing: .04em; }
+    .is-hidden { display: none !important; }
+
+    /* ---------- picker: chrome fixo do protótipo ---------- */
+    .proto-picker {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 2147483647;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 4px;
+      border-radius: 999px;
+      background: rgba(10, 10, 10, 0.82);
+      -webkit-backdrop-filter: blur(12px) saturate(1.4);
+      backdrop-filter: blur(12px) saturate(1.4);
+      box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+        0 8px 24px rgba(0, 0, 0, 0.24),
+        0 2px 6px rgba(0, 0, 0, 0.12);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 13px;
+      line-height: 1;
+      -webkit-font-smoothing: antialiased;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .proto-picker-highlight {
+      position: absolute;
+      top: 4px;
+      left: 0;
+      height: 28px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+      will-change: transform;
+    }
+    .proto-picker[data-ready] .proto-picker-highlight {
+      transition:
+        transform 250ms cubic-bezier(0.23, 1, 0.32, 1),
+        width 250ms cubic-bezier(0.23, 1, 0.32, 1);
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .proto-picker[data-ready] .proto-picker-highlight { transition: none; }
+    }
+    .proto-picker-item {
+      position: relative;
+      display: flex;
+      align-items: center;
+      height: 28px;
+      padding: 0 12px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: rgba(255, 255, 255, 0.55);
+      font: inherit;
+      cursor: pointer;
+      transition: color 150ms ease-out;
+    }
+    .proto-picker-item:hover { color: rgba(255, 255, 255, 0.85); }
+    .proto-picker-item:active { transform: scale(0.97); }
+    .proto-picker-item:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.4); outline-offset: 2px; }
+    .proto-picker-item[data-active] { color: #fff; }
+    .proto-picker-divider { width: 1px; height: 16px; margin: 0 4px; background: rgba(255, 255, 255, 0.12); }
+    .proto-picker-replay { padding: 0 10px; font-size: 14px; }
+
+    /* ---------- shared product controls ---------- */
+    .search-form { display: flex; gap: 7px; }
+    .search-input { min-width: 0; flex: 1; outline: none; }
+    .search-submit { border: 0; font-weight: 700; }
+    .mode-switch { display: flex; gap: 3px; }
+    .mode-btn, .format-btn { border: 0; cursor: pointer; }
+    .mode-btn[aria-pressed="true"], .format-btn[aria-pressed="true"] { font-weight: 700; }
+    .suggestions { margin: 0; padding: 0; list-style: none; }
+    .suggestions:empty { display: none; }
+    .suggestion { cursor: pointer; }
+    .suggestion small { display: block; }
+    .result { overflow: auto; }
+    .result-title { display: flex; align-items: center; gap: 8px; }
+    .new-chip { display: inline-flex; align-items: center; border-radius: 999px; font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+    .data-row { display: flex; justify-content: space-between; gap: 12px; }
+    .data-row span:first-child { opacity: .58; }
+    .data-row span:last-child { text-align: right; font-weight: 600; }
+    .copy-btn { border: 1px solid currentColor; background: transparent; }
+    .copy-btn.copied { color: #39d98a !important; }
+    .result-empty { color: inherit; opacity: .55; }
+    .close-btn { border: 0; background: transparent; cursor: pointer; }
+    .format-row { display: flex; justify-content: space-between; align-items: center; }
+
+    /* ---------- 1. Essencial: utilitário nativo, baixa densidade ---------- */
+    .essential {
+      --bg: rgba(34, 35, 40, .95); --surface: rgba(255,255,255,.065); --surface-strong: rgba(255,255,255,.11);
+      --line: rgba(255,255,255,.13); --muted: #a4a5ae; --accent: #2690ff;
+      display: flex; flex-direction: column; color: #f5f5f7; background: var(--bg); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 24px 80px rgba(0,0,0,.42); animation: rise-in 220ms ease-out both;
+    }
+    .essential header { display:flex; align-items:center; gap:9px; padding: 15px 16px 13px; border-bottom: 1px solid var(--line); }
+    .essential header .brand { flex: 1; }
+    .essential header strong { display:block; font-size: 14px; letter-spacing:-.01em; }
+    .essential header small { color:var(--muted); font-size: 11px; }
+    .essential .close-btn { color:var(--muted); font-size: 18px; padding: 3px 6px; border-radius: 7px; }
+    .essential .close-btn:hover { background:var(--surface-strong); color:#fff; }
+    .essential .body { display:flex; flex-direction:column; flex:1; min-height:0; }
+    .essential .mode-switch { padding: 13px 14px 8px; }
+    .essential .mode-btn { padding: 5px 10px; border-radius: 7px; color:var(--muted); background:transparent; font-size:11px; }
+    .essential .mode-btn[aria-pressed="true"] { color:#fff; background:var(--surface-strong); }
+    .essential .search-form { padding: 0 14px 9px; }
+    .essential .search-input { min-height: 36px; padding: 0 11px; color:#fff; border:1px solid var(--line); border-radius:9px; background:var(--surface); font-family: ui-monospace, monospace; font-size:12px; }
+    .essential .search-input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(38,144,255,.22); }
+    .essential .search-submit { padding: 0 14px; border-radius:9px; color:#fff; background:var(--accent); font-size:12px; }
+    .essential .suggestions { padding: 0 14px 8px; }
+    .essential .suggestion { padding: 7px 9px; border-radius: 8px; background: var(--surface); color:#fff; font-size:11px; }
+    .essential .suggestion + .suggestion { margin-top: 4px; }
+    .essential .suggestion:hover, .essential .suggestion:focus { outline: none; background:var(--surface-strong); }
+    .essential .result { flex:1; min-height:0; padding: 12px 15px; border-top:1px solid var(--line); }
+    .essential .result-title { font-size: 14px; font-weight: 700; }
+    .essential .new-chip { padding: 3px 7px; color:#071d13; background:#39d98a; }
+    .essential .result-meta { display:flex; gap:6px; margin-top:6px; color:var(--muted); font-family:ui-monospace,monospace; font-size:10px; }
+    .essential .result-card { margin-top:13px; padding:11px; border-radius:10px; background:var(--surface); }
+    .essential .data-row { padding: 7px 0; font-size:11px; border-bottom:1px solid rgba(255,255,255,.07); }
+    .essential .data-row:last-child { border-bottom:0; }
+    .essential .format-row { padding: 10px 14px 13px; border-top:1px solid var(--line); }
+    .essential .formats { display:flex; padding:3px; border-radius:8px; background:var(--surface); }
+    .essential .format-btn { padding:5px 9px; border-radius:6px; color:var(--muted); background:transparent; font-size:11px; }
+    .essential .format-btn[aria-pressed="true"] { color:#fff; background:var(--surface-strong); }
+    .essential .copy-btn { padding:5px 10px; border-radius:7px; color:var(--muted); font-size:11px; }
+
+    /* ---------- 2. Ficha: editorial, foco na empresa ---------- */
+    .ficha {
+      --ink:#172033; --muted:#68748a; --paper:#f4f6fa; --card:#fff; --line:#dce2ec; --accent:#1769d4; --mint:#16845a;
+      display:flex; flex-direction:column; color:var(--ink); background:var(--paper); border:1px solid #cbd3df; border-radius:20px; box-shadow:0 26px 80px rgba(0,18,55,.28); animation: fade-in 220ms ease-out both;
+    }
+    .ficha header { display:flex; align-items:center; gap:10px; padding:19px 19px 16px; background:var(--card); border-bottom:1px solid var(--line); }
+    .ficha .brand { flex:1; }
+    .ficha .eyebrow { color:var(--accent); font-size:10px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
+    .ficha header strong { display:block; margin-top:3px; font-family: Georgia, serif; font-size:20px; line-height:1.1; letter-spacing:-.03em; }
+    .ficha .close-btn { color:var(--muted); font-size:18px; }
+    .ficha .search-area { padding:15px 18px 0; }
+    .ficha .mode-switch { gap:16px; margin-bottom:9px; }
+    .ficha .mode-btn { padding:0 0 5px; color:var(--muted); background:transparent; border-bottom:2px solid transparent; font-size:11px; }
+    .ficha .mode-btn[aria-pressed="true"] { color:var(--accent); border-color:var(--accent); }
+    .ficha .search-form { align-items:center; }
+    .ficha .search-input { height:38px; padding:0 12px; border:1px solid var(--line); border-radius:10px; color:var(--ink); background:#fff; font-size:12px; }
+    .ficha .search-input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(23,105,212,.15); }
+    .ficha .search-submit { height:38px; padding:0 13px; border-radius:10px; color:#fff; background:var(--accent); font-size:12px; }
+    .ficha .suggestions { padding-top:7px; }
+    .ficha .suggestion { padding:8px 10px; border:1px solid var(--line); border-radius:9px; background:var(--card); font-size:11px; }
+    .ficha .suggestion + .suggestion { margin-top:5px; }
+    .ficha .suggestion small { color:var(--muted); }
+    .ficha .result { flex:1; min-height:0; margin-top:15px; padding:18px; background:var(--card); border-top:1px solid var(--line); }
+    .ficha .result-title { align-items:flex-start; font-family:Georgia,serif; font-size:23px; line-height:1.05; letter-spacing:-.035em; }
+    .ficha .result-title .new-chip { align-self:center; padding:4px 7px; color:#08613f; background:#d3f4e4; font-family:-apple-system,sans-serif; font-size:9px; letter-spacing:.09em; }
+    .ficha .result-meta { margin-top:8px; color:var(--muted); font-size:11px; }
+    .ficha .section-label { margin:18px 0 5px; color:var(--muted); font-size:10px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
+    .ficha .result-card { padding:3px 0; }
+    .ficha .data-row { padding:8px 0; font-size:12px; border-bottom:1px solid var(--line); }
+    .ficha .data-row:last-child { border-bottom:0; }
+    .ficha .format-row { padding:12px 18px 15px; background:var(--card); border-top:1px solid var(--line); }
+    .ficha .formats { display:flex; gap:4px; }
+    .ficha .format-btn { padding:5px 7px; color:var(--muted); background:transparent; font-size:11px; }
+    .ficha .format-btn[aria-pressed="true"] { color:var(--accent); }
+    .ficha .copy-btn { padding:6px 11px; border-color:var(--line); border-radius:8px; color:var(--accent); font-size:11px; }
+
+    /* ---------- 3. Comando: busca em primeiro plano, teclado ---------- */
+    .comando {
+      --bg:#10141b; --panel:#171d27; --surface:#202936; --line:#344253; --muted:#91a0b4; --accent:#8bdcff; --accent-2:#c4a6ff;
+      display:flex; flex-direction:column; color:#eaf2fb; background:linear-gradient(145deg,#151c27,#0c1016); border:1px solid var(--line); border-radius:13px; box-shadow:0 26px 90px rgba(0,0,0,.58); animation: command-in 220ms ease-out both;
+    }
+    .comando header { display:flex; align-items:center; gap:9px; padding:13px 15px; border-bottom:1px solid var(--line); }
+    .comando .brand { flex:1; }
+    .comando header strong { display:block; font-size:12px; letter-spacing:.08em; text-transform:uppercase; }
+    .comando header small { color:var(--muted); font:10px ui-monospace,monospace; }
+    .comando .close-btn { color:var(--muted); font-size:16px; }
+    .comando .search-zone { padding:14px; background:rgba(32,41,54,.52); }
+    .comando .mode-switch { gap:6px; margin-bottom:8px; }
+    .comando .mode-btn { padding:3px 7px; border:1px solid transparent; border-radius:5px; color:var(--muted); background:transparent; font:10px ui-monospace,monospace; }
+    .comando .mode-btn[aria-pressed="true"] { color:var(--accent); border-color:rgba(139,220,255,.35); background:rgba(139,220,255,.08); }
+    .comando .search-form { position:relative; }
+    .comando .search-input { height:42px; padding:0 43px 0 13px; border:1px solid var(--line); border-radius:8px; color:#fff; background:#0d1219; font:12px ui-monospace,monospace; }
+    .comando .search-input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(139,220,255,.13); }
+    .comando .search-submit { position:absolute; right:5px; top:5px; width:32px; height:32px; padding:0; border-radius:6px; color:#061019; background:var(--accent); font-size:13px; }
+    .comando .suggestions { margin-top:8px; }
+    .comando .suggestion { padding:8px 9px; border-left:2px solid var(--accent-2); background:var(--surface); font:11px ui-monospace,monospace; }
+    .comando .suggestion + .suggestion { margin-top:4px; }
+    .comando .suggestion small { margin-top:3px; color:var(--muted); }
+    .comando .result { flex:1; min-height:0; padding:15px; background:var(--bg); }
+    .comando .result-title { color:var(--accent); font:700 17px ui-monospace,monospace; }
+    .comando .new-chip { padding:3px 6px; color:#10141b; background:var(--accent-2); font:800 9px ui-monospace,monospace; }
+    .comando .result-meta { margin-top:7px; color:var(--muted); font:10px ui-monospace,monospace; }
+    .comando .result-card { margin-top:16px; padding:11px 12px; border:1px solid var(--line); border-radius:8px; background:rgba(32,41,54,.5); }
+    .comando .data-row { padding:7px 0; font:11px ui-monospace,monospace; border-bottom:1px dashed rgba(145,160,180,.24); }
+    .comando .data-row:last-child { border-bottom:0; }
+    .comando .data-row span:last-child { color:#f6fbff; }
+    .comando .format-row { padding:10px 14px; border-top:1px solid var(--line); background:var(--panel); }
+    .comando .formats { display:flex; gap:8px; }
+    .comando .format-btn { padding:4px 0; color:var(--muted); background:transparent; font:10px ui-monospace,monospace; }
+    .comando .format-btn[aria-pressed="true"] { color:var(--accent); }
+    .comando .copy-btn { padding:5px 9px; border-color:var(--line); border-radius:6px; color:var(--accent); font:10px ui-monospace,monospace; }
+
+    @keyframes rise-in { from { opacity:0; transform:translateY(9px) scale(.985); } to { opacity:1; transform:none; } }
+    @keyframes fade-in { from { opacity:0; } to { opacity:1; } }
+    @keyframes command-in { from { opacity:0; transform:scale(.98); } to { opacity:1; transform:none; } }
+    @media (prefers-reduced-motion: reduce) {
+      .essential, .ficha, .comando { animation: none; }
+      * { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+    }
+    @media (max-width: 480px) { body { padding-left:8px; padding-right:8px; } .demo-frame { width:100%; } }
+  </style>
+</head>
+<body>
+  <main id="stage" aria-live="polite"></main>
+
+  <nav class="proto-picker" aria-label="Prototype variants">
+    <span class="proto-picker-highlight" aria-hidden="true"></span>
+    <button class="proto-picker-item" data-active aria-current="true">Essencial</button>
+    <button class="proto-picker-item">Ficha</button>
+    <button class="proto-picker-item">Comando</button>
+    <span class="proto-picker-divider" aria-hidden="true"></span>
+    <button class="proto-picker-item proto-picker-replay" aria-label="Replay animation (R)">↻</button>
+  </nav>
+
+  <script>
+    const ICON_APP = `<svg class="app-icon" viewBox="0 0 1024 1024" aria-label="Ícone do aplicativo" role="img"><defs><linearGradient id="pbg" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#3aa0ff"/><stop offset=".55" stop-color="#0a6be0"/><stop offset="1" stop-color="#003a8f"/></linearGradient></defs><rect x="100" y="96" width="824" height="824" rx="186" fill="url(#pbg)"/><circle cx="470" cy="466" r="218" fill="rgba(255,255,255,.15)" stroke="#fff" stroke-width="46"/><path d="M626 622L742 738" stroke="#fff" stroke-width="62" stroke-linecap="round"/><g fill="#fff"><rect x="372" y="452" width="56" height="150" rx="14"/><rect x="444" y="386" width="56" height="216" rx="14"/><rect x="516" y="424" width="56" height="178" rx="14"/></g></svg>`;
+    const ICON_TRAY = `<svg class="tray-icon" viewBox="0 0 22 22" aria-label="Ícone da bandeja" role="img"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="5.5" stroke-width="2"/><path d="M13 13L17 17" stroke-width="2.5"/></g></svg>`;
+    const DEMO = {
+      cnpj: { cnpj:'68187708000137', razao_social:'RDS NEXUS LTDA', data_inicio_atividade:'2026-07-23', situacao_cadastral:'Ativa', logradouro:'Rua Waldemar Siepierski', numero:'200', bairro:'Rio Branco', municipio:'Cariacica', uf:'ES', cep:'29147901' },
+      cep: { cep:'01310100', street:'Avenida Paulista', neighborhood:'Bela Vista', city:'São Paulo', state:'SP', source:'cep-promise' },
+      rua: { cep:'29147901', street:'Rua Waldemar Siepierski', neighborhood:'Rio Branco', city:'Cariacica', state:'ES', source:'public-utilities' }
+    };
+    const STREETS = [
+      ['Rua Waldemar Siepierski, 200', 'Rio Branco · Cariacica, ES', '29147-901'],
+      ['Avenida Paulista', 'Bela Vista · São Paulo, SP', '01310-100'],
+      ['Rua Augusta, 500', 'Consolação · São Paulo, SP', '01305-000']
+    ];
+
+    function isNewCompany(data) {
+      if (!data.data_inicio_atividade) return false;
+      const start = new Date(`${data.data_inicio_atividade}T00:00:00`);
+      const now = new Date('2026-11-12T12:00:00');
+      return ((now.getFullYear() - start.getFullYear()) * 12 + now.getMonth() - start.getMonth()) < 6;
+    }
+    function chip(data) { return isNewCompany(data) ? '<span class="new-chip" title="Empresa aberta há menos de 6 meses">nova · 3 meses</span>' : ''; }
+    function rows(data, kind) {
+      if (kind === 'cep' || kind === 'rua') return `<div class="data-row"><span>CEP</span><span>${data.cep.slice(0,5)}-${data.cep.slice(5)}</span></div><div class="data-row"><span>Logradouro</span><span>${data.street}</span></div><div class="data-row"><span>Bairro</span><span>${data.neighborhood}</span></div><div class="data-row"><span>Cidade / UF</span><span>${data.city} · ${data.state}</span></div><div class="data-row"><span>Fonte</span><span>${data.source}</span></div>`;
+      return `<div class="data-row"><span>CNPJ</span><span>68.187.708/0001-37</span></div><div class="data-row"><span>Status</span><span>${data.situacao_cadastral}</span></div><div class="data-row"><span>Início</span><span>23/07/2026</span></div><div class="data-row"><span>Endereço</span><span>${data.logradouro}, ${data.numero}</span></div><div class="data-row"><span>CEP</span><span>29147-901</span></div>`;
+    }
+    function suggestions(query, variant) {
+      const q = query.toLowerCase().trim();
+      if (q.length < 3) return '';
+      return STREETS.filter(([name, city]) => `${name} ${city}`.toLowerCase().includes(q) || q.length >= 3).slice(0, 3).map(([name, city, cep]) => `<li class="suggestion" tabindex="0" data-cep="${cep}" data-street="${name}">${name}<small>${city} · CEP ${cep}</small></li>`).join('');
+    }
+    function shell(variant, content) { return `<section class="demo-frame ${variant}" data-variant="${variant}">${content}</section>`; }
+    function searchArea(variant) {
+      return `<div class="search-area"><div class="mode-switch" role="group" aria-label="Tipo de consulta"><button class="mode-btn" data-mode="cnpj" aria-pressed="true">CNPJ</button><button class="mode-btn" data-mode="cep" aria-pressed="false">CEP</button><button class="mode-btn" data-mode="rua" aria-pressed="false">Rua</button></div><form class="search-form"><label class="sr-only" for="query-${variant}">Buscar CNPJ, CEP ou rua</label><input class="search-input" id="query-${variant}" autocomplete="off" value="68187708000137" placeholder="CNPJ 14 dígitos" /><button class="search-submit" type="submit">Buscar</button></form><ul class="suggestions" aria-label="Sugestões de endereço"></ul></div>`;
+    }
+    function resultMarkup(kind, variant) {
+      const data = DEMO[kind];
+      const title = kind === 'cnpj' ? data.razao_social : kind === 'cep' ? 'Avenida Paulista' : 'Rua Waldemar Siepierski';
+      const meta = kind === 'cnpj' ? 'CNPJ · Ativa · Matriz' : `${kind === 'cep' ? 'CEP consultado' : 'Endereço encontrado'} · ${data.city} · ${data.state}`;
+      return `<div class="result" data-result><div class="result-title"><span>${title}</span>${kind === 'cnpj' ? chip(data) : ''}</div><div class="result-meta">${meta}</div><div class="result-card">${rows(data, kind)}</div><p class="result-empty">Demonstração local · resposta do serviço aparece aqui.</p></div>`;
+    }
+    function footer() { return `<div class="format-row"><div class="formats" role="group" aria-label="Formato"><button class="format-btn" aria-pressed="true">Markdown</button><button class="format-btn" aria-pressed="false">TXT</button></div><button class="copy-btn" type="button">Copiar</button></div>`; }
+    function renderEssential() {
+      return shell('essential', `<header><div class="icon-preview">${ICON_TRAY}<small>menu bar</small></div><div class="brand"><strong>Consulta rápida</strong><small>CNPJ · CEP · endereço</small></div>${ICON_APP}<button class="close-btn" type="button" aria-label="Fechar">×</button></header><div class="body">${searchArea('essential')}${resultMarkup('cnpj','essential')}${footer()}</div>`);
+    }
+    function renderFicha() {
+      return shell('ficha', `<header><div class="brand"><div class="eyebrow">RMS · consulta pública</div><strong>Ficha de cadastro</strong></div>${ICON_APP}<button class="close-btn" type="button" aria-label="Fechar">×</button></header>${searchArea('ficha')}${resultMarkup('cnpj','ficha')}${footer()}`);
+    }
+    function renderComando() {
+      return shell('comando', `<header><div class="icon-preview">${ICON_TRAY}</div><div class="brand"><strong>lookup</strong><small>Enter consulta · ↑↓ escolhe</small></div>${ICON_APP}<button class="close-btn" type="button" aria-label="Fechar">×</button></header><div class="search-zone">${searchArea('comando')}</div>${resultMarkup('cnpj','comando')}${footer()}`);
+    }
+    const variants = [renderEssential, renderFicha, renderComando];
+
+    function mountPanel(panel) {
+      const input = panel.querySelector('.search-input');
+      const form = panel.querySelector('.search-form');
+      const suggestionsEl = panel.querySelector('.suggestions');
+      const resultEl = panel.querySelector('[data-result]');
+      let mode = 'cnpj';
+      function setMode(next) {
+        mode = next;
+        panel.querySelectorAll('[data-mode]').forEach(btn => btn.setAttribute('aria-pressed', String(btn.dataset.mode === mode)));
+        input.value = mode === 'cnpj' ? '68187708000137' : mode === 'cep' ? '01310100' : '';
+        input.placeholder = mode === 'cnpj' ? 'CNPJ 14 dígitos' : mode === 'cep' ? 'CEP 8 dígitos' : 'Nome da rua ou avenida';
+        suggestionsEl.innerHTML = '';
+        if (mode === 'rua') input.focus();
+      }
+      function showResult(kind) {
+        resultEl.outerHTML = resultMarkup(kind, panel.dataset.variant);
+        panel.querySelector('[data-result]').scrollTop = 0;
+        panel.querySelector('.copy-btn').addEventListener('click', copyFeedback);
+      }
+      function copyFeedback(event) {
+        event.currentTarget.textContent = 'Copiado';
+        event.currentTarget.classList.add('copied');
+        setTimeout(() => { event.currentTarget.textContent = 'Copiar'; event.currentTarget.classList.remove('copied'); }, 1200);
+      }
+      panel.querySelectorAll('[data-mode]').forEach(btn => btn.addEventListener('click', () => setMode(btn.dataset.mode)));
+      panel.querySelectorAll('.format-btn').forEach(btn => btn.addEventListener('click', () => { panel.querySelectorAll('.format-btn').forEach(b => b.setAttribute('aria-pressed', String(b === btn))); }));
+      panel.querySelector('.copy-btn').addEventListener('click', copyFeedback);
+      panel.querySelector('.close-btn').addEventListener('click', () => { panel.classList.toggle('closed'); panel.querySelector('.close-btn').textContent = panel.classList.contains('closed') ? '+' : '×'; });
+      input.addEventListener('input', () => {
+        if (mode === 'rua') {
+          suggestionsEl.innerHTML = suggestions(input.value, panel.dataset.variant);
+          suggestionsEl.querySelectorAll('.suggestion').forEach(item => item.addEventListener('click', () => { input.value = item.dataset.street; showResult('rua'); suggestionsEl.innerHTML = ''; }));
+          suggestionsEl.querySelectorAll('.suggestion').forEach(item => item.addEventListener('keydown', e => { if (e.key === 'Enter') item.click(); }));
+        }
+      });
+      form.addEventListener('submit', e => {
+        e.preventDefault();
+        if (mode === 'rua') { showResult('rua'); suggestionsEl.innerHTML = ''; }
+        else showResult(mode);
+      });
+      setMode('cnpj');
+    }
+    function mountVariant(i) {
+      const stage = document.getElementById('stage');
+      stage.innerHTML = variants[i]();
+      mountPanel(stage.firstElementChild);
+      stage.querySelector('.search-input').focus();
+    }
+
+    // Picker wiring — variant swap is instant; only the picker highlight moves.
+    const stage = document.getElementById('stage');
+    const picker = document.querySelector('.proto-picker');
+    const highlight = picker.querySelector('.proto-picker-highlight');
+    const items = [...picker.querySelectorAll('.proto-picker-item:not(.proto-picker-replay)')];
+    const replay = picker.querySelector('.proto-picker-replay');
+    let current = 0;
+    function moveHighlight() { const el = items[current]; highlight.style.width = el.offsetWidth + 'px'; highlight.style.transform = `translateX(${el.offsetLeft}px)`; }
+    function mount(i) { stage.innerHTML = ''; requestAnimationFrame(() => { mountVariant(i); }); }
+    function setActive(i) {
+      if (i < 0 || i >= variants.length) return;
+      current = i;
+      items.forEach((el, j) => { el.toggleAttribute('data-active', j === i); if (j === i) el.setAttribute('aria-current', 'true'); else el.removeAttribute('aria-current'); });
+      moveHighlight();
+      const url = new URL(location); url.searchParams.set('v', i + 1); history.replaceState(null, '', url);
+      mount(i);
+    }
+    items.forEach((el, i) => el.addEventListener('click', () => setActive(i)));
+    replay?.addEventListener('click', () => mount(current));
+    window.addEventListener('resize', moveHighlight);
+    document.addEventListener('keydown', e => {
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const num = parseInt(e.key, 10);
+      if (num >= 1 && num <= variants.length) setActive(num - 1);
+      else if (e.key === 'ArrowRight') setActive((current + 1) % variants.length);
+      else if (e.key === 'ArrowLeft') setActive((current - 1 + variants.length) % variants.length);
+      else if (e.key === 'r' || e.key === 'R') mount(current);
+    });
+    setActive((parseInt(new URLSearchParams(location.search).get('v'), 10) || 1) - 1);
+    requestAnimationFrame(() => requestAnimationFrame(() => picker.setAttribute('data-ready', '')));
+  </script>
+</body>
+</html>

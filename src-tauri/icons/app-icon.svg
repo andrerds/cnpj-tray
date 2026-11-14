@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3AA0FF"/>
+      <stop offset="0.55" stop-color="#0A6BE0"/>
+      <stop offset="1" stop-color="#003A8F"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.30"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.04"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="lens" cx="0.38" cy="0.32" r="0.85">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.06"/>
+    </radialGradient>
+    <filter id="shadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="18" stdDeviation="26" flood-color="#001a3d" flood-opacity="0.30"/>
+    </filter>
+  </defs>
+
+  <!-- squircle do macOS: 824/1024 de lado, raio ~186 (proporção do ícone do sistema) -->
+  <rect x="100" y="96" width="824" height="824" rx="186" fill="url(#bg)"/>
+  <rect x="100" y="96" width="824" height="412" rx="186" fill="url(#sheen)"/>
+
+  <g filter="url(#shadow)">
+    <!-- lente -->
+    <circle cx="470" cy="466" r="218" fill="url(#lens)" stroke="#ffffff" stroke-width="46"/>
+    <!-- cabo -->
+    <path d="M626 622 L742 738" stroke="#ffffff" stroke-width="62" stroke-linecap="round"/>
+    <!-- skyline dentro da lente: três torres, a do meio mais alta -->
+    <g fill="#ffffff">
+      <rect x="372" y="452" width="56" height="150" rx="14"/>
+      <rect x="444" y="386" width="56" height="216" rx="14"/>
+      <rect x="516" y="424" width="56" height="178" rx="14"/>
+    </g>
+  </g>
+</svg>

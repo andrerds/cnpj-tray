@@ -161,6 +161,24 @@ fn historico(app: AppHandle) -> Vec<Consulta> {
     ler_historico(&app)
 }
 
+/// Busca sugestões de endereço pelo nome da rua (usa o serviço public-utilities).
+#[tauri::command]
+async fn buscar_endereco(query: String) -> Result<Vec<serde_json::Value>, String> {
+    if query.len() < 3 {
+        return Err("Digite pelo menos 3 caracteres para buscar.".to_string());
+    }
+    let url = format!("{}address/suggest?q={}&country=BR", API_UTIL, urlencoding::encode(&query));
+    let resp = buscar_json(&url, "public-utilities.rmscorretora.com.br").await?;
+
+    // A API retorna { data: [...] }
+    let suggestions = resp.get("data")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    Ok(suggestions)
+}
+
 /// Posiciona o painel logo abaixo do ícone da bandeja (ou acima, se a bandeja estiver na base).
 fn posicionar(win: &WebviewWindow, rect: Rect) {
     let Ok(escala) = win.scale_factor() else { return };
@@ -215,7 +233,7 @@ fn alternar_painel(win: &WebviewWindow, rect: Rect) {
 
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![consultar, historico])
+        .invoke_handler(tauri::generate_handler![consultar, historico, buscar_endereco])
         .setup(|app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);

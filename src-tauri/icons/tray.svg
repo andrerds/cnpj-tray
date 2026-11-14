@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+ <!-- Template monocromático: lupa grossa + badge CEP pequeno -->
+ <g fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2">
+ <circle cx="9.5" cy="9.5" r="5.5"/>
+ <path d="M13.5 13.5 L17.5 17.5" stroke-width="2.8"/>
+ </g>
+ <!-- Badge discreto no canto superior direito -->
+ <rect x="15" y="3" width="7" height="7" rx="1.5" fill="#000000" opacity="0.25"/>
+ <text x="16.2" y="8" font-size="4.5" fill="#000000" font-weight="bold" font-family="sans-serif">CEP</text>
+</svg>
